@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { message, context, history } = req.body;
+        const { message, context, history, image } = req.body;
         
         // Construire le contexte de localisation
         let locationContext = "";
@@ -22,40 +22,39 @@ export default async function handler(req, res) {
 LOCALISATION ACTUELLE DU VISITEUR : ${context.current_location}
 ${context.location_full_desc || ''}
 
-ÉLÉMENTS VISIBLES ICI :
+ÉLÉMENTS REMARQUABLES DE CE LIEU :
 ${context.highlights ? context.highlights.join(', ') : 'Non spécifié'}
 
 ANECDOTES SUR CE LIEU :
 ${context.anecdotes ? context.anecdotes.map((a, i) => `${i+1}. ${a}`).join('\n') : 'Aucune'}
 
-PERSONNAGES LIÉS :
+PERSONNAGES HISTORIQUES LIÉS :
 ${context.related_people ? context.related_people.join(', ') : 'Non spécifié'}
 `;
         }
 
         const systemPrompt = `Tu es un guide expert de l'Opéra Garnier à Paris. Tu accompagnes un visiteur dans une visite virtuelle 360°.
 
-RÈGLE ABSOLUE : Tu sais EXACTEMENT où se trouve le visiteur grâce aux informations ci-dessous. Quand on te demande "c'est quoi cette pièce ?" ou "où suis-je ?", tu DOIS répondre en utilisant ces informations, PAS inventer.
+${image ? "IMPORTANT : Tu peux VOIR l'image de ce que le visiteur regarde actuellement. Analyse l'image pour répondre précisément à ses questions sur les éléments visuels (statues, peintures, architecture, détails)." : ""}
 
-${locationContext}
+CONTEXTE DU LIEU ACTUEL :
+${locationContext || "Lieu non identifié dans l'Opéra Garnier"}
 
 INSTRUCTIONS :
-- Réponds TOUJOURS en te basant sur la localisation actuelle indiquée ci-dessus
+- ${image ? "Utilise l'image fournie pour identifier et décrire ce que le visiteur voit" : "Tu ne peux pas voir ce que le visiteur regarde"}
+- Réponds en te basant sur la localisation et ${image ? "l'image" : "les informations fournies"}
 - Sois enthousiaste, cultivé et accessible
-- Partage des anecdotes fascinantes tirées du contexte fourni
-- Réponds en français, de manière concise (2-4 phrases max)
-- Si on te demande ce qu'est cet endroit, décris LE LIEU ACTUEL indiqué ci-dessus
-- N'invente JAMAIS - utilise uniquement les informations fournies
-- Tu ne peux PAS voir les images ou la visite virtuelle - tu ne connais que le NOM du lieu
-- Si on te demande d'identifier un objet, une statue, un détail visuel, dis honnêtement : "Je ne peux pas voir ce que vous regardez, mais je peux vous parler de ce lieu en général. Pouvez-vous me décrire ce que vous voyez ?"
-- Ne fabrique JAMAIS de réponse sur des éléments visuels que tu ne connais pas
+- Partage des anecdotes fascinantes
+- Réponds en français, de manière concise (3-5 phrases)
+- ${image ? "Décris ce que tu vois dans l'image si on te pose des questions visuelles" : "Si on te demande d'identifier un élément visuel, explique que tu ne peux pas le voir et demande une description"}
 - Tu peux suggérer d'autres lieux à visiter dans l'Opéra`;
 
+        // Construire les messages
         const messages = [];
         
-        // Historique
+        // Historique (sans images pour économiser les tokens)
         if (history && Array.isArray(history)) {
-            history.slice(-6).forEach(msg => {
+            history.slice(-4).forEach(msg => {
                 messages.push({
                     role: msg.role === 'assistant' ? 'assistant' : 'user',
                     content: msg.content
@@ -63,8 +62,30 @@ INSTRUCTIONS :
             });
         }
         
-        // Message actuel
-        messages.push({ role: 'user', content: message });
+        // Message actuel avec ou sans image
+        if (image) {
+            // Format OpenAI Vision (compatible OpenRouter)
+            messages.push({
+                role: 'user',
+                content: [
+                    {
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:image/jpeg;base64,${image}`
+                        }
+                    },
+                    {
+                        type: 'text',
+                        text: message
+                    }
+                ]
+            });
+        } else {
+            messages.push({ role: 'user', content: message });
+        }
+
+        // Choisir le modèle (avec vision si image présente)
+        const model = image ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3-haiku';
 
         // Appel API OpenRouter
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -76,7 +97,7 @@ INSTRUCTIONS :
                 'X-Title': 'VR360 Opera Garnier Guide'
             },
             body: JSON.stringify({
-                model: 'anthropic/claude-3-haiku',
+                model: model,
                 messages: [
                     { role: 'system', content: systemPrompt },
                     ...messages
@@ -97,7 +118,8 @@ INSTRUCTIONS :
 
         return res.status(200).json({ 
             reply,
-            scene: context?.current_scene_id || 'unknown'
+            scene: context?.current_scene_id || 'unknown',
+            vision_used: !!image
         });
 
     } catch (error) {
