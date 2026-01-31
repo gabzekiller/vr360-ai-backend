@@ -13,7 +13,46 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { message, context, history, image } = req.body;
+        const { message, context, history, image, language } = req.body;
+        
+        // Déterminer la langue de réponse (défaut: français)
+        const lang = language || 'fr';
+        const langNames = {
+            'fr': 'français',
+            'en': 'English',
+            'de': 'Deutsch',
+            'es': 'español',
+            'it': 'italiano',
+            'pt': 'português',
+            'nl': 'Nederlands',
+            'zh': '中文',
+            'ja': '日本語',
+            'ko': '한국어',
+            'ru': 'русский',
+            'ar': 'العربية',
+            'he': 'עברית',
+            'fa': 'فارسی',
+            'pl': 'polski',
+            'cs': 'čeština',
+            'hu': 'magyar',
+            'ro': 'română',
+            'bg': 'български',
+            'hr': 'hrvatski',
+            'uk': 'українська',
+            'el': 'ελληνικά',
+            'tr': 'Türkçe',
+            'sv': 'svenska',
+            'da': 'dansk',
+            'no': 'norsk',
+            'fi': 'suomi',
+            'th': 'ไทย',
+            'vi': 'Tiếng Việt',
+            'id': 'Bahasa Indonesia',
+            'ms': 'Bahasa Melayu',
+            'tl': 'Tagalog',
+            'hi': 'हिन्दी'
+        };
+        const langName = langNames[lang.split('-')[0]] || langNames['fr'];
         
         // Construire le contexte de localisation
         let locationContext = "";
@@ -64,7 +103,7 @@ ${locationContext || "Quelque part dans l'Opéra Garnier"}
 PERSONNALITÉ :
 - Sois enthousiaste et passionné par l'Opéra Garnier
 - Partage des anecdotes fascinantes
-- Réponds en français, de manière vivante (3-5 phrases)
+- IMPORTANT : Réponds UNIQUEMENT en ${langName}, de manière vivante (3-5 phrases)
 - Fais des liens entre ce que tu vois et l'histoire du lieu`;
 
         // Construire les messages
@@ -128,7 +167,7 @@ PERSONNALITÉ :
         if (!response.ok) {
             const errorData = await response.text();
             console.error('OpenRouter error:', errorData);
-            throw new Error(`OpenRouter API error: ${response.status}`);
+            throw new Error(`OpenRouter HTTP ${response.status} at ${new Date().toISOString()}`);
         }
 
         const data = await response.json();
@@ -137,7 +176,8 @@ PERSONNALITÉ :
         return res.status(200).json({ 
             reply,
             scene: context?.current_scene_id || 'unknown',
-            vision_used: !!image
+            vision_used: !!image,
+            language: lang
         });
 
     } catch (error) {
