@@ -1,93 +1,107 @@
 export default async function handler(req, res) {
+    // CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     
-    if (req.method === 'OPTIONS') return res.status(200).end();
-    if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
     
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method not allowed' });
+    }
+
     try {
         const { message, context, history } = req.body;
-        if (!message) return res.status(400).json({ error: 'Message required' });
         
-        const systemPrompt = buildSystemPrompt(context);
-        const messages = [...(history || []), { role: 'user', content: message }];
-        const provider = process.env.AI_PROVIDER || 'openrouter';
+        // Construire le contexte de localisation
+        let locationContext = "";
+        if (context && context.current_location) {
+            locationContext = `
+LOCALISATION ACTUELLE DU VISITEUR : ${context.current_location}
+${context.location_full_desc || ''}
+
+ÉLÉMENTS VISIBLES ICI :
+${context.highlights ? context.highlights.join(', ') : 'Non spécifié'}
+
+ANECDOTES SUR CE LIEU :
+${context.anecdotes ? context.anecdotes.map((a, i) => `${i+1}. ${a}`).join('\n') : 'Aucune'}
+
+PERSONNAGES LIÉS :
+${context.related_people ? context.related_people.join(', ') : 'Non spécifié'}
+`;
+        }
+
+        const systemPrompt = `Tu es un guide expert de l'Opéra Garnier à Paris. Tu accompagnes un visiteur dans une visite virtuelle 360°.
+
+RÈGLE ABSOLUE : Tu sais EXACTEMENT où se trouve le visiteur grâce aux informations ci-dessous. Quand on te demande "c'est quoi cette pièce ?" ou "où suis-je ?", tu DOIS répondre en utilisant ces informations, PAS inventer.
+
+${locationContext}
+
+INSTRUCTIONS :
+- Réponds TOUJOURS en te basant sur la localisation actuelle indiquée ci-dessus
+- Sois enthousiaste, cultivé et accessible
+- Partage des anecdotes fascinantes tirées du contexte fourni
+- Réponds en français, de manière concise (2-4 phrases max)
+- Si on te demande ce qu'est cet endroit, décris LE LIEU ACTUEL indiqué ci-dessus
+- N'invente JAMAIS - utilise uniquement les informations fournies
+- Tu peux suggérer d'autres lieux à visiter dans l'Opéra`;
+
+        const messages = [];
         
-        let reply;
-        
-        if (provider === 'anthropic') {
-            const response = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': process.env.ANTHROPIC_API_KEY,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify({
-                    model: 'claude-sonnet-4-20250514',
-                    max_tokens: 600,
-                    system: systemPrompt,
-                    messages: messages
-                })
+        // Historique
+        if (history && Array.isArray(history)) {
+            history.slice(-6).forEach(msg => {
+                messages.push({
+                    role: msg.role === 'assistant' ? 'assistant' : 'user',
+                    content: msg.content
+                });
             });
-            if (!response.ok) throw new Error(`Anthropic HTTP ${response.status}`);
-            const data = await response.json();
-            reply = data.content[0]?.text || "Erreur";
-        } else {
-            // OpenRouter (gratuit)
-            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                    'HTTP-Referer': 'https://gabrielacoca.fr',
-                    'X-Title': 'VR360 Opera Garnier'
-                },
-                body: JSON.stringify({
-                    model: 'openai/gpt-3.5-turbo',
-                    max_tokens: 600,
-                    messages: [{ role: 'system', content: systemPrompt }, ...messages]
-                })
-            });
-            if (!response.ok) throw new Error(`OpenRouter HTTP ${response.status}`);
-            const data = await response.json();
-            reply = data.choices[0]?.message?.content || "Erreur";
         }
         
-        return res.status(200).json({ reply, suggested_scene: extractSuggestedScene(reply, context) });
+        // Message actuel
+        messages.push({ role: 'user', content: message });
+
+        // Appel API OpenRouter
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'https://www.gabrielacoca.fr',
+                'X-Title': 'VR360 Opera Garnier Guide'
+            },
+            body: JSON.stringify({
+                model: 'anthropic/claude-3-haiku',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    ...messages
+                ],
+                max_tokens: 500,
+                temperature: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.text();
+            console.error('OpenRouter error:', errorData);
+            throw new Error(`OpenRouter API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const reply = data.choices[0]?.message?.content || "Désolé, je n'ai pas pu générer de réponse.";
+
+        return res.status(200).json({ 
+            reply,
+            scene: context?.current_scene_id || 'unknown'
+        });
+
     } catch (error) {
         console.error('Error:', error);
-        return res.status(500).json({ error: 'AI service error' });
+        return res.status(500).json({ 
+            error: 'Erreur serveur',
+            reply: "Désolé, je rencontre un problème technique. Réessayez dans quelques instants."
+        });
     }
-}
-
-function buildSystemPrompt(ctx) {
-    const c = ctx || {};
-    return `Tu es un guide expert passionné de l'Opéra Garnier, le célèbre opéra de Paris.
-
-LIEU ACTUEL: ${c.current_location || "l'entrée"}
-${c.location_full_desc ? `DESCRIPTION: ${c.location_full_desc}` : ''}
-${c.highlights?.length ? `POINTS D'INTÉRÊT: ${c.highlights.join(', ')}` : ''}
-${c.anecdotes?.length ? `ANECDOTES: ${c.anecdotes.join(' ')}` : ''}
-
-INSTRUCTIONS:
-- Réponds en 2-4 phrases max (sauf demande contraire)
-- Sois enthousiaste mais naturel
-- Utilise les anecdotes pour rendre tes réponses vivantes
-- N'invente jamais de faits
-- Réponds en français
-- Ton conversationnel, évite les listes`;
-}
-
-function extractSuggestedScene(reply, ctx) {
-    const kw = {
-        'grand escalier': 'pano13', 'chagall': 'pano14', 'lustre': 'pano14',
-        'loge': 'pano19', 'fantôme': 'pano19', 'grand foyer': 'pano24',
-        'baudry': 'pano24', 'glacier': 'pano27', 'bibliothèque': 'pano81',
-        'degas': 'pano103', 'danse': 'pano103'
-    };
-    const r = reply.toLowerCase(), cur = (ctx?.current_location || '').toLowerCase();
-    for (const [k, v] of Object.entries(kw)) if (r.includes(k) && !cur.includes(k)) return v;
-    return null;
 }
