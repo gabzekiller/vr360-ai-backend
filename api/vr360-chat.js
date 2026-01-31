@@ -45,7 +45,7 @@ export default async function handler(req, res) {
                     'X-Title': 'VR360 Opera Garnier'
                 },
                 body: JSON.stringify({
-                    model: 'meta-llama/llama-3.3-70b-instruct:free',
+                    model: 'google/gemma-2-9b-it:free',
                     max_tokens: 600,
                     messages: [{ role: 'system', content: systemPrompt }, ...messages]
                 })
