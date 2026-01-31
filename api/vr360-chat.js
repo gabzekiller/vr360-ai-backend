@@ -45,7 +45,7 @@ export default async function handler(req, res) {
                     'X-Title': 'VR360 Opera Garnier'
                 },
                 body: JSON.stringify({
-                    model: 'nousresearch/nous-capybara-7b:free',
+                    model: 'openai/gpt-3.5-turbo',
                     max_tokens: 600,
                     messages: [{ role: 'system', content: systemPrompt }, ...messages]
                 })
