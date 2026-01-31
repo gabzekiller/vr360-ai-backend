@@ -46,6 +46,9 @@ INSTRUCTIONS :
 - Réponds en français, de manière concise (2-4 phrases max)
 - Si on te demande ce qu'est cet endroit, décris LE LIEU ACTUEL indiqué ci-dessus
 - N'invente JAMAIS - utilise uniquement les informations fournies
+- Tu ne peux PAS voir les images ou la visite virtuelle - tu ne connais que le NOM du lieu
+- Si on te demande d'identifier un objet, une statue, un détail visuel, dis honnêtement : "Je ne peux pas voir ce que vous regardez, mais je peux vous parler de ce lieu en général. Pouvez-vous me décrire ce que vous voyez ?"
+- Ne fabrique JAMAIS de réponse sur des éléments visuels que tu ne connais pas
 - Tu peux suggérer d'autres lieux à visiter dans l'Opéra`;
 
         const messages = [];
