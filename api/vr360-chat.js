@@ -33,26 +33,44 @@ ${context.related_people ? context.related_people.join(', ') : 'Non spécifié'}
 `;
         }
 
+        // System prompt amélioré pour la lecture d'inscriptions
         const systemPrompt = `Tu es un guide expert de l'Opéra Garnier à Paris. Tu accompagnes un visiteur dans une visite virtuelle 360°.
 
-${image ? "IMPORTANT : Tu peux VOIR l'image de ce que le visiteur regarde actuellement. Analyse l'image pour répondre précisément à ses questions sur les éléments visuels (statues, peintures, architecture, détails)." : ""}
+${image ? `CAPACITÉ VISUELLE ACTIVÉE - Tu peux VOIR l'image que le visiteur regarde.
 
-CONTEXTE DU LIEU ACTUEL :
-${locationContext || "Lieu non identifié dans l'Opéra Garnier"}
+INSTRUCTIONS CRITIQUES POUR L'ANALYSE VISUELLE :
+1. LIS ATTENTIVEMENT tout texte visible dans l'image :
+   - Inscriptions sur les socles de statues/bustes
+   - Noms gravés (ex: "CHARLES GARNIER", "MOZART", "BEETHOVEN", "ROSSINI")
+   - Dates (ex: "1825-1898")
+   - Plaques commémoratives
+   - Titres d'œuvres
 
-INSTRUCTIONS :
-- ${image ? "Utilise l'image fournie pour identifier et décrire ce que le visiteur voit" : "Tu ne peux pas voir ce que le visiteur regarde"}
-- Réponds en te basant sur la localisation et ${image ? "l'image" : "les informations fournies"}
-- Sois enthousiaste, cultivé et accessible
+2. IDENTIFIE les personnages grâce aux inscriptions :
+   - Si tu vois "CHARLES GARNIER 1825-1898" → C'est le buste de Charles Garnier, l'architecte de l'Opéra
+   - Si tu vois un nom de compositeur → Identifie-le et parle de son lien avec l'Opéra
+
+3. DÉCRIS PRÉCISÉMENT ce que tu vois :
+   - Type d'œuvre (buste, statue, peinture, fresque, horloge...)
+   - Matériaux visibles (bronze, marbre, dorure...)
+   - Détails architecturaux
+   - Couleurs et lumières
+
+4. NE DIS JAMAIS "je ne peux pas identifier" si une inscription est visible !` : "Tu ne peux pas voir ce que le visiteur regarde. Demande-lui de décrire ce qu'il voit."}
+
+CONTEXTE DU LIEU :
+${locationContext || "Quelque part dans l'Opéra Garnier"}
+
+PERSONNALITÉ :
+- Sois enthousiaste et passionné par l'Opéra Garnier
 - Partage des anecdotes fascinantes
-- Réponds en français, de manière concise (3-5 phrases)
-- ${image ? "Décris ce que tu vois dans l'image si on te pose des questions visuelles" : "Si on te demande d'identifier un élément visuel, explique que tu ne peux pas le voir et demande une description"}
-- Tu peux suggérer d'autres lieux à visiter dans l'Opéra`;
+- Réponds en français, de manière vivante (3-5 phrases)
+- Fais des liens entre ce que tu vois et l'histoire du lieu`;
 
         // Construire les messages
         const messages = [];
         
-        // Historique (sans images pour économiser les tokens)
+        // Historique (limité pour économiser les tokens)
         if (history && Array.isArray(history)) {
             history.slice(-4).forEach(msg => {
                 messages.push({
@@ -64,14 +82,14 @@ INSTRUCTIONS :
         
         // Message actuel avec ou sans image
         if (image) {
-            // Format OpenAI Vision (compatible OpenRouter)
             messages.push({
                 role: 'user',
                 content: [
                     {
                         type: 'image_url',
                         image_url: {
-                            url: `data:image/jpeg;base64,${image}`
+                            url: `data:image/jpeg;base64,${image}`,
+                            detail: 'high'  // Demande une analyse haute résolution
                         }
                     },
                     {
@@ -84,8 +102,8 @@ INSTRUCTIONS :
             messages.push({ role: 'user', content: message });
         }
 
-        // Choisir le modèle (avec vision si image présente)
-        const model = image ? 'anthropic/claude-3-haiku' : 'anthropic/claude-3-haiku';
+        // Utiliser Claude 3 Haiku (supporte la vision)
+        const model = 'anthropic/claude-3-haiku';
 
         // Appel API OpenRouter
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -102,7 +120,7 @@ INSTRUCTIONS :
                     { role: 'system', content: systemPrompt },
                     ...messages
                 ],
-                max_tokens: 500,
+                max_tokens: 600,
                 temperature: 0.7
             })
         });
