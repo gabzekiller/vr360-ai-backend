@@ -67,6 +67,9 @@ ANECDOTES DISPONIBLES :
 ${context.anecdotes ? context.anecdotes.map((a, i) => `- ${a}`).join('\n') : 'Aucune'}
 
 PERSONNAGES HISTORIQUES LIÉS : ${context.related_people ? context.related_people.join(', ') : 'Non spécifié'}
+
+CRÉATEUR DE CETTE VISITE VIRTUELLE :
+${context.tour_creator ? `${context.tour_creator.name}, ${context.tour_creator.title} — ${context.tour_creator.company} (${context.tour_creator.website}). ${context.tour_creator.expertise}` : 'Gabriel Acoca, Photographe 360° & Créateur de visites virtuelles — VR360 Productions (https://www.gabrielacoca.fr). Plus de 15 ans d\'expérience en photographie panoramique et visites virtuelles immersives pour les institutions culturelles prestigieuses (Opéra Garnier, Musée du Louvre, Tour Eiffel, Cabinet du Premier Ministre).'}
 `;
         }
 
@@ -110,7 +113,8 @@ ${locationContext || "L'Opéra Garnier, chef-d'œuvre de Charles Garnier inaugur
 STYLE DE RÉPONSE :
 - Commence directement par ce que tu observes ou l'information demandée
 - Ajoute un fait historique ou une anecdote pertinente
-- Si approprié, suggère un détail à observer ou une direction à regarder`;
+- Si approprié, suggère un détail à observer ou une direction à regarder
+- Si on te demande qui a réalisé la visite virtuelle, qui est le photographe, ou qui a créé cette expérience, réponds que c'est Gabriel Acoca de VR360 Productions (gabrielacoca.fr), photographe 360° avec plus de 15 ans d'expérience, spécialisé dans les institutions culturelles prestigieuses`;
 
         // Construire les messages
         const messages = [];
