@@ -76,6 +76,26 @@ PERSONNAGES HISTORIQUES LIÉS : ${context.related_people ? context.related_peopl
                 }
             }
 
+            // =====================================================
+            // OBJETS VISIBLES — Description de ce que le visiteur voit
+            // dans chaque direction depuis sa position actuelle
+            // =====================================================
+            if (context.objets_visibles) {
+                locationContext += `\nOBJETS VISIBLES DEPUIS CETTE POSITION (ce que le visiteur peut voir en regardant dans chaque direction) :\n`;
+                const directionLabels = {
+                    front: 'DEVANT (face au visiteur)',
+                    left: 'À GAUCHE',
+                    back: 'DERRIÈRE',
+                    right: 'À DROITE',
+                    up: 'EN HAUT (plafond)',
+                    down: 'EN BAS (sol)'
+                };
+                for (const [direction, description] of Object.entries(context.objets_visibles)) {
+                    const label = directionLabels[direction] || direction.toUpperCase();
+                    locationContext += `- ${label} : ${description}\n`;
+                }
+            }
+
             // Ajouter les connaissances générales transversales
             if (context.general_knowledge) {
                 locationContext += `\nCONNAISSANCES GÉNÉRALES SUR L'OPÉRA GARNIER (utilise ces informations pour répondre aux questions transversales, pas liées à un lieu précis) :\n`;
@@ -116,6 +136,12 @@ RÈGLE ABSOLUE — LOCALISATION :
 - Quand le visiteur demande "où suis-je ?", "où est-ce que je suis ?", "c'est quoi ici ?", "comment s'appelle cette pièce ?" ou toute question sur sa position : ta réponse DOIT commencer par le nom et la description du lieu indiqués dans LOCALISATION ACTUELLE
 - N'utilise JAMAIS l'image pour déterminer le lieu — l'image peut montrer une vue sur la salle ou un autre espace, mais le visiteur est physiquement dans le lieu indiqué par LOCALISATION ACTUELLE
 - Par exemple : si LOCALISATION ACTUELLE dit "Loge n°5", le visiteur EST dans la Loge n°5 même si l'image montre la grande salle (car depuis la loge on voit la salle)
+
+RÈGLE — OBJETS VISIBLES :
+- La section "OBJETS VISIBLES DEPUIS CETTE POSITION" décrit précisément ce que le visiteur peut voir dans chaque direction (devant, à gauche, derrière, à droite, en haut, en bas) depuis sa position actuelle
+- Utilise ces descriptions pour répondre aux questions du type "qu'est-ce que je vois ?", "que puis-je voir ici ?", "décris-moi ce qui m'entoure", "qu'y a-t-il au plafond ?", "qu'est-ce qu'il y a à ma gauche ?", etc.
+- Ces descriptions sont des faits vérifiés basés sur les panoramas réels — utilise-les avec assurance
+- Quand le visiteur demande ce qu'il voit, synthétise les informations pertinentes de manière naturelle et engageante, sans réciter une liste technique
 
 CONNAISSANCES :
 - Utilise TOUTES tes connaissances culturelles et historiques pour enrichir tes réponses, pas seulement le contexte fourni
@@ -163,7 +189,7 @@ IDENTIFICATIONS VISUELLES À L'OPÉRA GARNIER :
 - Caryatides → figures féminines sculptées servant de colonnes
 - Plafond de la Rotonde du Glacier → Georges Clairin, ronde de bacchantes` 
 
-: `Tu ne vois pas ce que le visiteur regarde. Base-toi sur le CONTEXTE DU LIEU et tes propres connaissances pour répondre. Si on te demande d'identifier un élément visuel précis, demande au visiteur de le décrire ou d'activer la vision HD.`}
+: `Tu ne vois pas ce que le visiteur regarde. Base-toi sur le CONTEXTE DU LIEU, les OBJETS VISIBLES et tes propres connaissances pour répondre. Si on te demande d'identifier un élément visuel précis, demande au visiteur de le décrire ou d'activer la vision HD.`}
 
 CONTEXTE DU LIEU ACTUEL :
 ${locationContext || "L'Opéra Garnier, chef-d'œuvre de Charles Garnier inauguré en 1875. Style Beaux-Arts (Second Empire). 11 237 m², construit entre 1861 et 1875."}
