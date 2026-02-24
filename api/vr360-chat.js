@@ -69,7 +69,7 @@ export default async function handler(req, res) {
                     'X-Title': 'VR360 Opera Garnier Guide - Ensemble Judge'
                 },
                 body: JSON.stringify({
-                    model: 'anthropic/claude-3.5-sonnet',
+                    model: 'anthropic/claude-3-haiku',
                     messages: [
                         { role: 'system', content: `Tu es un expert en synthèse d'informations sur l'Opéra Garnier. On te donne plusieurs réponses de différentes IA à la même question d'un visiteur. Synthétise la meilleure réponse possible. Réponds en ${langName}.` },
                         ...messages
@@ -271,8 +271,8 @@ STYLE DE RÉPONSE :
             messages.push({ role: 'user', content: message });
         }
 
-        // Claude 3.5 Haiku — meilleur en vision que 3 Haiku, même gamme de prix
-        const model = 'anthropic/claude-3.5-haiku';
+        // Claude 3 Haiku — supporte la vision sur OpenRouter (3.5 Haiku ne supporte PAS les images)
+        const model = 'anthropic/claude-3-haiku';
 
         // Appel API OpenRouter
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
