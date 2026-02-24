@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { message, context, history, image, language } = req.body;
+        const { message, context, history, image, language, _isJudge } = req.body;
         
         // Déterminer la langue de réponse (défaut: français)
         const lang = language || 'fr';
@@ -53,7 +53,47 @@ export default async function handler(req, res) {
             'hi': 'हिन्दी'
         };
         const langName = langNames[lang.split('-')[0]] || langNames['fr'];
+
+        // =====================================================
+        // MODE JUGE (ensemble v9) — prompt simplifié
+        // =====================================================
+        if (_isJudge) {
+            const messages = [{ role: 'user', content: message }];
+            
+            const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                    'HTTP-Referer': 'https://www.gabrielacoca.fr',
+                    'X-Title': 'VR360 Opera Garnier Guide - Ensemble Judge'
+                },
+                body: JSON.stringify({
+                    model: 'anthropic/claude-3.5-sonnet',
+                    messages: [
+                        { role: 'system', content: `Tu es un expert en synthèse d'informations sur l'Opéra Garnier. On te donne plusieurs réponses de différentes IA à la même question d'un visiteur. Synthétise la meilleure réponse possible. Réponds en ${langName}.` },
+                        ...messages
+                    ],
+                    max_tokens: 800,
+                    temperature: 0.3
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.text();
+                console.error('OpenRouter judge error:', errorData);
+                throw new Error(`OpenRouter HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            const reply = data.choices[0]?.message?.content || "Erreur de synthèse.";
+            return res.status(200).json({ reply, mode: 'judge' });
+        }
         
+        // =====================================================
+        // MODE STANDARD — Guide de l'Opéra
+        // =====================================================
+
         // Construire le contexte de localisation
         let locationContext = "";
         if (context && context.current_location) {
@@ -68,7 +108,7 @@ ${context.anecdotes ? context.anecdotes.map((a, i) => `- ${a}`).join('\n') : 'Au
 
 PERSONNAGES HISTORIQUES LIÉS : ${context.related_people ? context.related_people.join(', ') : 'Non spécifié'}
 `;
-            // Ajouter les connaissances approfondies si disponibles
+            // Connaissances approfondies
             if (context.deep_knowledge) {
                 locationContext += `\nCONNAISSANCES APPROFONDIES SUR CE LIEU :\n`;
                 for (const [theme, content] of Object.entries(context.deep_knowledge)) {
@@ -76,12 +116,9 @@ PERSONNAGES HISTORIQUES LIÉS : ${context.related_people ? context.related_peopl
                 }
             }
 
-            // =====================================================
-            // OBJETS VISIBLES — Description de ce que le visiteur voit
-            // dans chaque direction depuis sa position actuelle
-            // =====================================================
+            // Objets visibles par direction
             if (context.objets_visibles) {
-                locationContext += `\nOBJETS VISIBLES DEPUIS CETTE POSITION (ce que le visiteur peut voir en regardant dans chaque direction) :\n`;
+                locationContext += `\nOBJETS VISIBLES DEPUIS CETTE POSITION :\n`;
                 const directionLabels = {
                     front: 'DEVANT (face au visiteur)',
                     left: 'À GAUCHE',
@@ -96,19 +133,21 @@ PERSONNAGES HISTORIQUES LIÉS : ${context.related_people ? context.related_peopl
                 }
             }
 
-            // Ajouter les connaissances générales transversales
+            // Connaissances générales transversales
             if (context.general_knowledge) {
-                locationContext += `\nCONNAISSANCES GÉNÉRALES SUR L'OPÉRA GARNIER (utilise ces informations pour répondre aux questions transversales, pas liées à un lieu précis) :\n`;
+                locationContext += `\nCONNAISSANCES GÉNÉRALES SUR L'OPÉRA GARNIER :\n`;
                 for (const [theme, content] of Object.entries(context.general_knowledge)) {
                     locationContext += `- ${theme.replace(/_/g, ' ').toUpperCase()} : ${content}\n`;
                 }
             }
 
-            // Ajouter le créateur
+            // Créateur
             locationContext += `\nCRÉATEUR DE CETTE VISITE VIRTUELLE :\n${context.tour_creator ? `${context.tour_creator.name}, ${context.tour_creator.title} — ${context.tour_creator.company} (${context.tour_creator.website}). ${context.tour_creator.expertise}` : 'Gabriel Acoca, Photographe 360° — VR360 Productions (https://www.gabrielacoca.fr). Plus de 15 ans d\'expérience en visites virtuelles immersives pour les institutions culturelles prestigieuses.'}\n`;
         }
 
-        // System prompt amélioré - ton sobre et factuel + connaissances libérées
+        // =====================================================
+        // SYSTEM PROMPT v9 — Vision corrigée
+        // =====================================================
         const systemPrompt = `Tu es un guide cultivé et passionné de l'Opéra Garnier à Paris. Tu accompagnes un visiteur dans une visite virtuelle 360°.
 
 TON IDENTITÉ :
@@ -125,23 +164,60 @@ RÈGLES DE COMMUNICATION :
 - Réponds en 3-5 phrases par défaut. Si le visiteur demande "plus de détails", "raconte-moi tout" ou pose une question approfondie, tu peux développer davantage (jusqu'à 8-10 phrases)
 - Réponds UNIQUEMENT en ${langName}
 
-RÈGLE FONDAMENTALE — PRIORITÉ AUX DONNÉES CONTEXTUELLES :
-- Pour TOUTE question factuelle (nombres, dates, dimensions, noms, poids, capacité...), utilise TOUJOURS les données du CONTEXTE DU LIEU ci-dessous. Ces données sont exactes et vérifiées.
-- Ne JAMAIS essayer de deviner, estimer ou compter visuellement ce que tu peux lire dans le contexte (ex: nombre de places, poids du lustre, dimensions, etc.)
-- L'image sert UNIQUEMENT à identifier des éléments visuels que le visiteur pointe (sculptures, détails décoratifs, inscriptions) ou à enrichir la description de l'ambiance
-- Quand tu donnes un chiffre ou un fait, donne-le avec assurance comme si tu le savais de mémoire — jamais "il semble y avoir" ou "on peut estimer"
-
 RÈGLE ABSOLUE — LOCALISATION :
 - Tu sais EXACTEMENT où se trouve le visiteur grâce au champ "LOCALISATION ACTUELLE" ci-dessous. C'est une certitude, pas une supposition.
 - Quand le visiteur demande "où suis-je ?", "où est-ce que je suis ?", "c'est quoi ici ?", "comment s'appelle cette pièce ?" ou toute question sur sa position : ta réponse DOIT commencer par le nom et la description du lieu indiqués dans LOCALISATION ACTUELLE
-- N'utilise JAMAIS l'image pour déterminer le lieu — l'image peut montrer une vue sur la salle ou un autre espace, mais le visiteur est physiquement dans le lieu indiqué par LOCALISATION ACTUELLE
-- Par exemple : si LOCALISATION ACTUELLE dit "Loge n°5", le visiteur EST dans la Loge n°5 même si l'image montre la grande salle (car depuis la loge on voit la salle)
+- N'utilise JAMAIS l'image pour déterminer le lieu — l'image montre CE QUE LE VISITEUR VOIT depuis sa position, PAS sa position elle-même
+- Exemple : si LOCALISATION ACTUELLE dit "Loge n°5", le visiteur EST dans la Loge n°5 même si l'image montre la grande salle (car depuis la loge on voit la salle)
 
 RÈGLE — OBJETS VISIBLES :
-- La section "OBJETS VISIBLES DEPUIS CETTE POSITION" décrit précisément ce que le visiteur peut voir dans chaque direction (devant, à gauche, derrière, à droite, en haut, en bas) depuis sa position actuelle
+- La section "OBJETS VISIBLES DEPUIS CETTE POSITION" décrit ce que le visiteur peut voir dans chaque direction
 - Utilise ces descriptions pour répondre aux questions du type "qu'est-ce que je vois ?", "que puis-je voir ici ?", "décris-moi ce qui m'entoure", "qu'y a-t-il au plafond ?", "qu'est-ce qu'il y a à ma gauche ?", etc.
-- Ces descriptions sont des faits vérifiés basés sur les panoramas réels — utilise-les avec assurance
-- Quand le visiteur demande ce qu'il voit, synthétise les informations pertinentes de manière naturelle et engageante, sans réciter une liste technique
+- Ces descriptions sont des faits vérifiés — utilise-les avec assurance
+- Quand le visiteur demande ce qu'il voit, synthétise les informations de manière naturelle et engageante
+
+${image ? `ANALYSE VISUELLE — MÉTHODE EN 3 ÉTAPES :
+
+Tu reçois une capture d'écran de ce que le visiteur regarde en ce moment. C'est une information PRÉCIEUSE.
+
+ÉTAPE 1 — REGARDE D'ABORD L'IMAGE :
+Avant de consulter le contexte, observe attentivement l'image. Identifie :
+- Quel OBJET ou ÉLÉMENT précis occupe le centre ou la majorité de l'image ?
+- Y a-t-il des INSCRIPTIONS, NOMS, DATES visibles ? (lis-les en priorité)
+- L'objet visible est-il un candélabre ? un lustre ? une sculpture ? un plafond ? un piano ? un buste ?
+
+ÉTAPE 2 — IDENTIFIE DE QUOI PARLE LA QUESTION :
+La question du visiteur porte-t-elle sur :
+(A) L'OBJET VISIBLE DANS L'IMAGE → réponds en décrivant CE QUE TU VOIS réellement
+(B) Le LIEU en général (histoire, dimensions, capacité) → utilise le CONTEXTE
+(C) Un FAIT PRÉCIS documenté (poids du lustre, date, architecte) → utilise le CONTEXTE
+
+ÉTAPE 3 — RÉPONDS EN COHÉRENCE :
+- Si la question porte sur ce qui est VISIBLE (option A) : décris ce que tu vois RÉELLEMENT dans l'image. Si le visiteur demande "combien d'ampoules ?", compte celles visibles dans l'image, pas celles du lustre principal documenté dans le contexte.
+- Si la question porte sur des FAITS GÉNÉRAUX (options B ou C) : utilise le contexte documenté.
+- RÈGLE CRITIQUE : ne confonds JAMAIS un candélabre de l'escalier avec le grand lustre de la salle. Ne confonds JAMAIS un buste avec un autre. REGARDE l'image pour savoir de QUEL objet on parle, puis donne les informations correctes pour CET objet précis.
+
+EXEMPLES DE COHÉRENCE :
+- Image = candélabre à 24 bougies + question "combien d'ampoules ?" → "Ce candélabre porte 24 bougies électriques..." (PAS "340 lumières" qui est le lustre principal)
+- Image = plafond de Chagall + question "qui a peint ça ?" → "Marc Chagall, en 1964..."
+- Image = Grand Escalier + question "combien de marches ?" → utilise le contexte si disponible
+- Image = buste avec inscription "NOVERRE" + question "c'est qui ?" → "Jean-Georges Noverre (1727-1810), créateur du ballet moderne..."
+
+IDENTIFICATIONS VISUELLES À L'OPÉRA GARNIER :
+- Candélabres en bronze du Grand Escalier → torchères à bras multiples, éclairage au gaz converti en électrique. Chaque candélabre est unique, conçu par Charles Garnier. Ils comptent généralement entre 15 et 30 bougies selon le modèle.
+- Grand lustre de la salle → 8 tonnes, 340 lumières, cristal de Baccarat (NE PAS confondre avec les candélabres)
+- Plafond coloré de la salle → Marc Chagall (1964), commande d'André Malraux
+- Plafond original sous le Chagall → Jules-Eugène Lenepveu (intact)
+- Plafond du Grand Foyer → Paul Baudry, 33 panneaux, 8 ans de travail
+- Escalier en marbres de couleurs → 7 variétés de 7 pays
+- Statues dorées avec bouquets lumineux → torchères monumentales
+- Caryatides → figures féminines sculptées servant de colonnes
+- Plafond de la Rotonde du Glacier → Georges Clairin, ronde de bacchantes
+- Buste "CHARLES GARNIER 1825-1898" → l'architecte de l'Opéra
+- NOVERRE (1727-1810) → Jean-Georges Noverre, créateur du ballet moderne
+- MOZART, BEETHOVEN, ROSSINI, SPONTINI, AUBER, HALÉVY, MEYERBEER, DONIZETTI → bustes de compositeurs` 
+
+: `Tu ne vois pas ce que le visiteur regarde actuellement. Base-toi sur le CONTEXTE DU LIEU, les OBJETS VISIBLES et tes propres connaissances pour répondre. Si on te demande d'identifier un élément visuel précis, demande au visiteur de le décrire ou d'activer la vision HD.`}
 
 CONNAISSANCES :
 - Utilise TOUTES tes connaissances culturelles et historiques pour enrichir tes réponses, pas seulement le contexte fourni
@@ -149,53 +225,11 @@ CONNAISSANCES :
 - Si le visiteur pose une question qui dépasse le contexte fourni mais que tu connais la réponse, réponds avec assurance
 - Fais des liens entre ce que le visiteur voit et des œuvres d'art, des livres, des films, de la musique
 
-${image ? `ANALYSE VISUELLE — RÈGLES STRICTES :
-Tu reçois une capture d'écran de la visite virtuelle. Utilise-la UNIQUEMENT pour :
-1. IDENTIFIER un élément visuel spécifique que le visiteur te montre ou te demande d'identifier (sculpture, inscription, détail)
-2. ENRICHIR ta description de l'ambiance et de l'atmosphère du lieu
-3. LIRE des inscriptions visibles (noms, dates sur socles ou plaques)
-
-ATTENTION CRITIQUE : L'image montre CE QUE LE VISITEUR VOIT depuis sa position, PAS l'endroit où il se trouve. Par exemple, depuis une loge on voit la grande salle, mais le visiteur est DANS la loge. Depuis le paradis on voit le lustre et le plafond, mais le visiteur est AU paradis. Ne confonds JAMAIS la vue avec la position. La position du visiteur est TOUJOURS celle indiquée dans LOCALISATION ACTUELLE.
-
-N'utilise JAMAIS l'image pour :
-- DÉTERMINER OÙ SE TROUVE LE VISITEUR → utilise TOUJOURS la LOCALISATION ACTUELLE
-- Compter ou estimer des quantités (nombre de places, de colonnes...) → utilise le CONTEXTE
-- Deviner des dimensions, poids ou mesures → utilise le CONTEXTE
-- Inventer des informations que tu ne vois pas clairement
-
-UTILISE TOUJOURS l'image pour :
-- LIRE les marques, logos, textes, inscriptions visibles (ex: marque d'un piano, nom sur un socle)
-- IDENTIFIER des objets, instruments, meubles, éléments décoratifs visibles
-- DÉCRIRE ce que le visiteur pointe ou demande d'identifier
-
-MÉTHODE D'ANALYSE VISUELLE (dans cet ordre STRICT) :
-1. LIRE EN PRIORITÉ toutes les INSCRIPTIONS, NOMS, DATES visibles dans l'image — c'est la chose la plus importante. Si tu vois un nom et des dates (ex: "NOVERRE 1810", "GARNIER 1825-1898"), identifie immédiatement la personne et explique qui elle est
-2. IDENTIFIER le LIEU grâce au contexte fourni (tu sais déjà où tu es)
-3. DÉCRIRE les éléments visuels remarquables si pertinent
-
-PERSONNAGES IMPORTANTS DONT LES NOMS APPARAISSENT DANS L'OPÉRA :
-- NOVERRE (1727-1810) → Jean-Georges Noverre, danseur et maître de ballet français, considéré comme le créateur du ballet moderne (ballet d'action). Son traité "Lettres sur la danse" (1760) révolutionna l'art chorégraphique.
-- GARNIER (1825-1898) → Charles Garnier, l'architecte de cet Opéra
-- MOZART, BEETHOVEN, ROSSINI, SPONTINI, AUBER, HALÉVY, MEYERBEER, DONIZETTI → Bustes de compositeurs sur la façade et dans les espaces intérieurs
-
-IDENTIFICATIONS VISUELLES À L'OPÉRA GARNIER :
-- Buste avec "CHARLES GARNIER 1825-1898" → l'architecte de l'Opéra
-- Grand lustre de la salle → 8 tonnes, 340 lumières, cristal de Baccarat
-- Plafond coloré de la salle → Marc Chagall (1964), commande d'André Malraux
-- Plafond original sous le Chagall → Jules-Eugène Lenepveu (intact)
-- Plafond du Grand Foyer → Paul Baudry, 33 panneaux, 8 ans de travail
-- Escalier en marbres de couleurs → 7 variétés de 7 pays
-- Statues dorées avec bouquets lumineux → torchères
-- Caryatides → figures féminines sculptées servant de colonnes
-- Plafond de la Rotonde du Glacier → Georges Clairin, ronde de bacchantes` 
-
-: `Tu ne vois pas ce que le visiteur regarde. Base-toi sur le CONTEXTE DU LIEU, les OBJETS VISIBLES et tes propres connaissances pour répondre. Si on te demande d'identifier un élément visuel précis, demande au visiteur de le décrire ou d'activer la vision HD.`}
-
-CONTEXTE DU LIEU ACTUEL :
+DONNÉES CONTEXTUELLES — pour les faits généraux sur le lieu :
 ${locationContext || "L'Opéra Garnier, chef-d'œuvre de Charles Garnier inauguré en 1875. Style Beaux-Arts (Second Empire). 11 237 m², construit entre 1861 et 1875."}
 
 STYLE DE RÉPONSE :
-- Commence directement par l'information demandée ou ce que tu observes
+- Commence directement par l'information demandée ou par ce que tu observes dans l'image
 - Donne les faits avec assurance (chiffres exacts, dates précises, noms complets)
 - Ajoute un fait historique ou une anecdote pertinente et surprenante
 - Si approprié, suggère un détail à observer ou une direction à regarder
@@ -237,8 +271,8 @@ STYLE DE RÉPONSE :
             messages.push({ role: 'user', content: message });
         }
 
-        // Utiliser Claude 3 Haiku (supporte la vision)
-        const model = 'anthropic/claude-3-haiku';
+        // Claude 3.5 Haiku — meilleur en vision que 3 Haiku, même gamme de prix
+        const model = 'anthropic/claude-3.5-haiku';
 
         // Appel API OpenRouter
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -273,7 +307,8 @@ STYLE DE RÉPONSE :
             reply,
             scene: context?.current_scene_id || 'unknown',
             vision_used: !!image,
-            language: lang
+            language: lang,
+            model: model
         });
 
     } catch (error) {
